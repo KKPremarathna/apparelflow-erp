@@ -73,3 +73,16 @@ export function getMe(req, res) {
     user: req.user,
   });
 }
+
+export function logout(req, res) {
+  res.clearCookie("access_token", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+  });
+
+  return res.status(200).json({
+    message: "Logout successful.",
+  });
+}
