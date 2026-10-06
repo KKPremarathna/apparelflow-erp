@@ -125,3 +125,96 @@ export async function createOrder(req, res) {
     });
   }
 }
+
+export async function getOrders(req, res) {
+  try {
+    const orders = await prisma.cuttingOrder.findMany({
+      where: {
+        createdBy: req.user.id,
+      },
+      select: {
+        id: true,
+        orderNo: true,
+        targetQty: true,
+        fabricRollId: true,
+        actualFabricYds: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+
+        recipe: {
+          select: {
+            id: true,
+            recipeCode: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return res.status(200).json({
+      orders,
+    });
+  } catch (error) {
+    console.error("Fetch orders failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to fetch cutting orders.",
+    });
+  }
+}
+
+export async function getOrderById(req, res) {
+  try {
+    const { id } = req.params;
+
+    const order = await prisma.cuttingOrder.findFirst({
+      where: {
+        id,
+        createdBy: req.user.id,
+      },
+      include: {
+        recipe: true,
+
+        verificationItems: {
+          include: {
+            component: true,
+          },
+        },
+
+        verificationLogs: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          include: {
+            verifier: {
+              select: {
+                id: true,
+                fullName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        message: "Order not found.",
+      });
+    }
+
+    return res.status(200).json({
+      order,
+    });
+  } catch (error) {
+    console.error("Fetch order details failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to fetch order details.",
+    });
+  }
+}
