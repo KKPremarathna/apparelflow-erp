@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+
 import authRoutes from "./routes/authRoutes.js";
 import recipeRoutes from "./routes/recipeRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
@@ -9,6 +11,9 @@ import sewingRoutes from "./routes/sewingRoutes.js";
 
 const app = express();
 
+app.disable("x-powered-by");
+app.use(helmet());
+
 app.use(
   cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
@@ -16,7 +21,7 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "20kb" }));
 app.use(cookieParser());
 
 app.get("/api/health", (req, res) => {
