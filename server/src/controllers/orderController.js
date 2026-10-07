@@ -218,3 +218,132 @@ export async function getOrderById(req, res) {
     });
   }
 }
+
+export async function resubmitOrder(req, res) {
+  try {
+    const { id } = req.params;
+    const body = req.body ?? {};
+    const { actualFabricYds } = body;
+
+    if (
+      Object.keys(body).some((key) => key !== "actualFabricYds")
+    ) {
+      return res.status(400).json({
+        message: "Only actualFabricYds is accepted.",
+      });
+    }
+
+    if (
+      typeof actualFabricYds !== "number" ||
+      !Number.isFinite(actualFabricYds) ||
+      actualFabricYds <= 0 ||
+      actualFabricYds > 99999999.99 ||
+      !Number.isSafeInteger(
+        Number((actualFabricYds * 100).toFixed(8))
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Total fabric usage must be positive with at most 2 decimal places.",
+      });
+    }
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const order = await tx.cuttingOrder.findFirst({
+          where: {
+            id,
+            createdBy: req.user.id,
+          },
+        });
+
+        if (!order) {
+          return {
+            statusCode: 404,
+            message: "Order not found.",
+          };
+        }
+
+        if (order.status !== "REJECTED") {
+          return {
+            statusCode: 409,
+            message: "Only rejected orders can be resubmitted.",
+          };
+        }
+
+        if (
+          actualFabricYds < Number(order.actualFabricYds)
+        ) {
+          return {
+            statusCode: 400,
+            message:
+              "Total fabric usage cannot be lower than the previously recorded usage.",
+          };
+        }
+
+        const updated = await tx.cuttingOrder.updateMany({
+          where: {
+            id: order.id,
+            createdBy: req.user.id,
+            status: "REJECTED",
+          },
+          data: {
+            status: "PENDING_VERIFICATION",
+            actualFabricYds: actualFabricYds.toFixed(2),
+          },
+        });
+
+        if (updated.count !== 1) {
+          return {
+            statusCode: 409,
+            message: "Order state changed. Refresh and retry.",
+          };
+        }
+
+        await tx.verificationItem.updateMany({
+          where: {
+            orderId: order.id,
+          },
+          data: {
+            actualQty: null,
+            status: null,
+          },
+        });
+
+        return {
+          statusCode: 200,
+          orderId: order.id,
+        };
+      },
+      {
+        isolationLevel: "Serializable",
+      }
+    );
+
+    if (result.statusCode !== 200) {
+      return res.status(result.statusCode).json({
+        message: result.message,
+      });
+    }
+
+    return res.status(200).json({
+      message:
+        "Batch resubmitted. Every component must be counted again.",
+      orderId: result.orderId,
+      status: "PENDING_VERIFICATION",
+    });
+  } catch (error) {
+    if (error.code === "P2034") {
+      return res.status(409).json({
+        message:
+          "Another update occurred at the same time. Refresh and retry.",
+      });
+    }
+
+    console.error("Resubmit order failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to resubmit order.",
+    });
+  }
+}

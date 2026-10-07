@@ -13,17 +13,5 @@ router.post("/login", login);
 router.get("/me", requireAuth, getMe);
 router.post("/logout", logout);
 
-// Temporary route for testing role permissions.
-router.get(
-  "/supervisor-check",
-  requireAuth,
-  requireRole("cutting_supervisor"),
-  (req, res) => {
-    return res.status(200).json({
-      message: "Cutting Supervisor access allowed.",
-      user: req.user,
-    });
-  }
-);
 
 export default router;
