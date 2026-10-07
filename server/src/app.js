@@ -5,6 +5,7 @@ import authRoutes from "./routes/authRoutes.js";
 import recipeRoutes from "./routes/recipeRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import verificationRoutes from "./routes/verificationRoutes.js";
+import sewingRoutes from "./routes/sewingRoutes.js";
 
 const app = express();
 
@@ -29,5 +30,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/recipes", recipeRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/verification", verificationRoutes);
+app.use("/api/sewing", sewingRoutes);
 
 export default app;
