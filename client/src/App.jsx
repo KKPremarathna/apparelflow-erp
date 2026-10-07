@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 import SupervisorWorkspace from "./components/SupervisorWorkspace";
 import VerifierWorkspace from "./components/VerifierWorkspace";
+import SewingWorkspace from "./components/SewingWorkspace";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -154,9 +155,7 @@ export default function App() {
           ) : user.role === "cutting_verifier" ? (
             <VerifierWorkspace key={user.id} />
           ) : user.role === "sewing_supervisor" ? (
-            <section className="panel">
-              <p>Sewing workspace will be added next.</p>
-            </section>
+            <SewingWorkspace key={user.id} />
           ) : (
             <section className="panel">
               <p className="error">Unsupported user role.</p>
