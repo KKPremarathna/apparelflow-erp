@@ -119,6 +119,7 @@ model VerificationLog {
   decision      VerificationDecision
   rejectionNote String?              @map("rejection_note")
   wastagePct    Decimal?             @map("wastage_pct") @db.Decimal(6, 2)
+  componentSnapshot Json?            @map("component_snapshot")
   createdAt     DateTime             @default(now()) @map("created_at")
 
   order         CuttingOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
