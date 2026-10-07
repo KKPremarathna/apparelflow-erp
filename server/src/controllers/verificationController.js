@@ -1,4 +1,5 @@
 import prisma from "../db/prisma.js";
+import { recordActivity } from "../services/activityService.js";
 
 export async function getPendingOrders(req, res) {
   try {
@@ -191,6 +192,22 @@ export async function updateVerificationItem(req, res) {
             component: true,
           },
         });
+        await recordActivity(tx, {
+          user: req.user,
+          action: "COMPONENT_COUNT_UPDATED",
+          orderId: item.orderId,
+          metadata: {
+            itemId: item.id,
+            componentId: item.componentId,
+            componentName: updatedItem.component.componentName,
+            expectedQty: item.expectedQty,
+            previousActualQty: item.actualQty,
+            newActualQty: actualQty,
+            previousStatus: item.status,
+            newStatus: status,
+          },
+        });
+
 
         return {
           statusCode: 200,
@@ -387,6 +404,20 @@ export async function approveVerificationOrder(req, res) {
             wastagePct: true,
             componentSnapshot: true,
             createdAt: true,
+          },
+        });
+
+        await recordActivity(tx, {
+          user: req.user,
+          action: "BATCH_APPROVED",
+          orderId: order.id,
+          metadata: {
+            orderNo: order.orderNo,
+            previousStatus: order.status,
+            newStatus: "VERIFIED",
+            verificationLogId: auditLog.id,
+            wastagePct: auditLog.wastagePct?.toString() ?? null,
+            
           },
         });
 
@@ -599,6 +630,20 @@ export async function rejectVerificationOrder(req, res) {
             wastagePct: true,
             componentSnapshot: true,
             createdAt: true,
+          },
+        });
+
+        await recordActivity(tx, {
+          user: req.user,
+          action: "BATCH_REJECTED",
+          orderId: order.id,
+          metadata: {
+            orderNo: order.orderNo,
+            previousStatus: order.status,
+            newStatus: "REJECTED",
+            verificationLogId: auditLog.id,
+            wastagePct: auditLog.wastagePct?.toString() ?? null,
+            rejectionNote: rejectionNote.trim(),
           },
         });
 

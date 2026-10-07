@@ -3,6 +3,7 @@ import { api } from "./lib/api";
 import SupervisorWorkspace from "./components/SupervisorWorkspace";
 import VerifierWorkspace from "./components/VerifierWorkspace";
 import SewingWorkspace from "./components/SewingWorkspace";
+import MyActivity from "./components/MyActivity";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -15,52 +16,33 @@ export default function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-
     async function checkSession() {
       try {
-        const data = await api("/auth/me", {
-          signal: controller.signal,
-        });
-
+        const data = await api("/auth/me", { signal: controller.signal });
         setUser(data.user);
       } catch (err) {
         if (err.name === "AbortError") return;
-
-        if (err.status !== 401) {
-          setSessionError(err.message);
-        }
+        if (err.status !== 401) setSessionError(err.message);
       } finally {
-        if (!controller.signal.aborted) {
-          setChecking(false);
-        }
+        if (!controller.signal.aborted) setChecking(false);
       }
     }
-
     checkSession();
-
     return () => controller.abort();
   }, []);
 
   async function handleLogin(event) {
     event.preventDefault();
     setError("");
-
     if (!email.trim() || !password) {
       setError("Email and password are required.");
       return;
     }
-
     setBusy(true);
-
     try {
       const data = await api("/auth/login", {
-        method: "POST",
-        body: {
-          email: email.trim(),
-          password,
-        },
+        method: "POST", body: { email: email.trim(), password },
       });
-
       setUser(data.user);
       setPassword("");
     } catch (err) {
@@ -73,133 +55,71 @@ export default function App() {
   async function handleLogout() {
     setError("");
     setBusy(true);
-
     try {
-      await api("/auth/logout", {
-        method: "POST",
-      });
-
+      await api("/auth/logout", { method: "POST" });
       setUser(null);
       setPassword("");
     } catch (err) {
       if (err.status === 401) {
         setUser(null);
         setPassword("");
-      } else {
-        setError(err.message);
-      }
+      } else setError(err.message);
     } finally {
       setBusy(false);
     }
   }
 
-  if (checking) {
-    return (
-      <main className="container">
-        <p role="status">Checking session...</p>
-      </main>
-    );
-  }
-
+  if (checking) return <main className="container"><p role="status">Checking session...</p></main>;
   if (sessionError) {
     return (
       <main className="container">
         <h1>ApparelFlow</h1>
-
-        <p className="error" role="alert">
-          Unable to check session: {sessionError}
-        </p>
-
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-        >
-          Retry
-        </button>
+        <p className="error" role="alert">Unable to check session: {sessionError}</p>
+        <button type="button" onClick={() => window.location.reload()}>Retry</button>
       </main>
     );
   }
 
+  const supportedRole = user && ["cutting_supervisor", "cutting_verifier", "sewing_supervisor"].includes(user.role);
+
   return (
     <main className="container">
       <h1>ApparelFlow</h1>
-      <p>Cutting Verification & Sewing Queue</p>
-
+      <p>Cutting Verification &amp; Sewing Queue</p>
       {user ? (
         <>
           <section className="panel">
             <div className="section-heading">
               <h2>Welcome, {user.fullName}</h2>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                disabled={busy}
-              >
+              <button type="button" onClick={handleLogout} disabled={busy}>
                 {busy ? "Please wait..." : "Logout"}
               </button>
             </div>
-
             <p>Email: {user.email}</p>
             <p>Role: {user.role}</p>
-
-            {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
-            )}
+            {error && <p className="error" role="alert">{error}</p>}
           </section>
-
           {user.role === "cutting_supervisor" ? (
             <SupervisorWorkspace key={user.id} />
           ) : user.role === "cutting_verifier" ? (
             <VerifierWorkspace key={user.id} />
           ) : user.role === "sewing_supervisor" ? (
             <SewingWorkspace key={user.id} />
-          ) : (
-            <section className="panel">
-              <p className="error">Unsupported user role.</p>
-            </section>
-          )}
+          ) : <section className="panel"><p className="error">Unsupported user role.</p></section>}
+          {supportedRole && <MyActivity key={user.id} />}
         </>
       ) : (
         <section className="panel">
           <h2>Login</h2>
-
           <form onSubmit={handleLogin}>
             <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              disabled={busy}
-              required
-            />
-
+            <input id="email" name="email" type="email" autoComplete="username"
+              value={email} onChange={(event) => setEmail(event.target.value)} disabled={busy} required />
             <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              disabled={busy}
-              required
-            />
-
-            {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
-            )}
-
-            <button type="submit" disabled={busy}>
-              {busy ? "Logging in..." : "Login"}
-            </button>
+            <input id="password" name="password" type="password" autoComplete="current-password"
+              value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} required />
+            {error && <p className="error" role="alert">{error}</p>}
+            <button type="submit" disabled={busy}>{busy ? "Logging in..." : "Login"}</button>
           </form>
         </section>
       )}
