@@ -23,8 +23,10 @@ export async function requireAuth(req, res, next) {
   }
 
   if (
+    payload === null ||
     typeof payload !== "object" ||
-    typeof payload.sub !== "string"
+    typeof payload.sub !== "string" ||
+    payload.sub.trim() === ""
   ) {
     return res.status(401).json({
       message: "Invalid session.",
