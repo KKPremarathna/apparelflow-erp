@@ -427,3 +427,216 @@ export async function approveVerificationOrder(req, res) {
     });
   }
 }
+
+export async function rejectVerificationOrder(req, res) {
+  try {
+    const { orderId } = req.params;
+    const body = req.body ?? {};
+    const { rejectionNote } = body;
+
+    if (
+      Object.keys(body).some((key) => key !== "rejectionNote")
+    ) {
+      return res.status(400).json({
+        message: "Only rejectionNote is accepted.",
+      });
+    }
+
+    if (
+      typeof rejectionNote !== "string" ||
+      rejectionNote.trim().length === 0 ||
+      rejectionNote.trim().length > 2000
+    ) {
+      return res.status(400).json({
+        message: "Rejection reason must contain 1 to 2000 characters.",
+      });
+    }
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const order = await tx.cuttingOrder.findUnique({
+          where: {
+            id: orderId,
+          },
+          include: {
+            recipe: {
+              include: {
+                components: true,
+              },
+            },
+            verificationItems: {
+              include: {
+                component: true,
+              },
+            },
+          },
+        });
+
+        if (!order) {
+          return {
+            statusCode: 404,
+            message: "Order not found.",
+          };
+        }
+
+        if (order.status !== "PENDING_VERIFICATION") {
+          return {
+            statusCode: 409,
+            message: "Only pending verification orders can be rejected.",
+          };
+        }
+
+        const requiredComponentIds = new Set(
+          order.recipe.components.map((component) => component.id)
+        );
+
+        const itemComponentIds = new Set(
+          order.verificationItems.map((item) => item.componentId)
+        );
+
+        const hasIncompleteRecords =
+          requiredComponentIds.size === 0 ||
+          order.verificationItems.length !== requiredComponentIds.size ||
+          itemComponentIds.size !== requiredComponentIds.size ||
+          [...requiredComponentIds].some(
+            (componentId) => !itemComponentIds.has(componentId)
+          );
+
+        if (hasIncompleteRecords) {
+          return {
+            statusCode: 422,
+            message:
+              "Rejection blocked: verification records do not match all recipe components.",
+          };
+        }
+
+        const hasInvalidOrMissingCount = order.verificationItems.some(
+          (item) =>
+            !Number.isSafeInteger(item.actualQty) ||
+            item.actualQty < 0 ||
+            item.actualQty > 2147483647
+        );
+
+        if (hasInvalidOrMissingCount) {
+          return {
+            statusCode: 422,
+            message:
+              "Rejection blocked: count and save every component before rejecting.",
+          };
+        }
+
+        const snapshot = order.verificationItems.map((item) => {
+          let status = null;
+
+          if (item.actualQty !== null) {
+            if (item.actualQty < item.expectedQty) {
+              status = "RED";
+            } else if (item.actualQty > item.expectedQty) {
+              status = "YELLOW";
+            } else {
+              status = "GREEN";
+            }
+          }
+
+          return {
+            componentId: item.componentId,
+            componentName: item.component.componentName,
+            expectedQty: item.expectedQty,
+            actualQty: item.actualQty,
+            varianceQty:
+              item.actualQty === null
+                ? null
+                : item.actualQty - item.expectedQty,
+            status,
+          };
+        });
+
+        const expectedFabric =
+          Number(order.recipe.stdFabricYards) * order.targetQty;
+
+        if (!Number.isFinite(expectedFabric) || expectedFabric <= 0) {
+          return {
+            statusCode: 409,
+            message: "Order has invalid fabric requirements.",
+          };
+        }
+
+        const wastagePct =
+          ((Number(order.actualFabricYds) - expectedFabric) /
+            expectedFabric) *
+          100;
+
+        const orderUpdate = await tx.cuttingOrder.updateMany({
+          where: {
+            id: order.id,
+            status: "PENDING_VERIFICATION",
+          },
+          data: {
+            status: "REJECTED",
+          },
+        });
+
+        if (orderUpdate.count !== 1) {
+          return {
+            statusCode: 409,
+            message: "Order state changed. Refresh and try again.",
+          };
+        }
+
+        const auditLog = await tx.verificationLog.create({
+          data: {
+            orderId: order.id,
+            verifierId: req.user.id,
+            decision: "REJECTED",
+            rejectionNote: rejectionNote.trim(),
+            wastagePct: wastagePct.toFixed(2),
+            componentSnapshot: snapshot,
+          },
+          select: {
+            id: true,
+            decision: true,
+            rejectionNote: true,
+            wastagePct: true,
+            componentSnapshot: true,
+            createdAt: true,
+          },
+        });
+
+        return {
+          statusCode: 200,
+          orderId: order.id,
+          auditLog,
+        };
+      },
+      {
+        isolationLevel: "Serializable",
+      }
+    );
+
+    if (result.statusCode !== 200) {
+      return res.status(result.statusCode).json({
+        message: result.message,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Batch rejected and returned for correction.",
+      orderId: result.orderId,
+      status: "REJECTED",
+      auditLog: result.auditLog,
+    });
+  } catch (error) {
+    if (error.code === "P2034") {
+      return res.status(409).json({
+        message:
+          "Another verification action occurred at the same time. Refresh and retry.",
+      });
+    }
+
+    console.error("Reject batch failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to reject batch.",
+    });
+  }
+}
