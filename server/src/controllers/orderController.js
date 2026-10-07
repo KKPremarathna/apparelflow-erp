@@ -1,5 +1,20 @@
 import { randomUUID } from "node:crypto";
 import prisma from "../db/prisma.js";
+import {
+  recordActivity,
+} from "../services/activityService.js";
+
+function isValidFabricUsage(value) {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    value <= 99999999.99 &&
+    Number.isSafeInteger(
+      Number((value * 100).toFixed(8))
+    )
+  );
+}
 
 export async function createOrder(req, res) {
   try {
@@ -10,7 +25,10 @@ export async function createOrder(req, res) {
       actualFabricYds,
     } = req.body ?? {};
 
-    if (typeof recipeId !== "string" || recipeId.trim() === "") {
+    if (
+      typeof recipeId !== "string" ||
+      recipeId.trim() === ""
+    ) {
       return res.status(400).json({
         message: "Recipe ID is required.",
       });
@@ -35,89 +53,127 @@ export async function createOrder(req, res) {
       });
     }
 
-    if (
-      typeof actualFabricYds !== "number" ||
-      !Number.isFinite(actualFabricYds) ||
-      actualFabricYds <= 0 ||
-      actualFabricYds > 99999999.99 ||
-      !Number.isSafeInteger(
-        Number((actualFabricYds * 100).toFixed(8))
-      )
-    ) {
+    if (!isValidFabricUsage(actualFabricYds)) {
       return res.status(400).json({
         message:
           "Actual fabric usage must be positive with at most 2 decimal places.",
       });
     }
 
-    const recipe = await prisma.recipe.findUnique({
-      where: {
-        id: recipeId.trim(),
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const recipe = await tx.recipe.findUnique({
+          where: {
+            id: recipeId.trim(),
+          },
+          include: {
+            components: true,
+          },
+        });
+
+        if (!recipe) {
+          return {
+            statusCode: 404,
+            message: "Recipe not found.",
+          };
+        }
+
+        if (recipe.components.length === 0) {
+          return {
+            statusCode: 409,
+            message: "This recipe has no components.",
+          };
+        }
+
+        const items = recipe.components.map((component) => ({
+          componentId: component.id,
+          expectedQty: component.piecesPerGarment * targetQty,
+        }));
+
+        const invalidExpectedCount = items.some(
+          (item) =>
+            !Number.isSafeInteger(item.expectedQty) ||
+            item.expectedQty <= 0 ||
+            item.expectedQty > 2147483647
+        );
+
+        if (invalidExpectedCount) {
+          return {
+            statusCode: 400,
+            message:
+              "Batch quantity exceeds supported component counts.",
+          };
+        }
+
+        const order = await tx.cuttingOrder.create({
+          data: {
+            orderNo: `CUT-${randomUUID()}`,
+            recipeId: recipe.id,
+            targetQty,
+            fabricRollId: fabricRollId.trim(),
+            actualFabricYds: actualFabricYds.toFixed(2),
+            status: "PENDING_VERIFICATION",
+            createdBy: req.user.id,
+
+            verificationItems: {
+              create: items,
+            },
+          },
+          include: {
+            recipe: true,
+            verificationItems: {
+              include: {
+                component: true,
+              },
+            },
+          },
+        });
+
+        await recordActivity(tx, {
+          user: req.user,
+          action: "ORDER_CREATED",
+          orderId: order.id,
+          metadata: {
+            orderNo: order.orderNo,
+            recipeId: recipe.id,
+            recipeCode: recipe.recipeCode,
+            recipeName: recipe.name,
+            targetQty,
+            fabricRollId: order.fabricRollId,
+            actualFabricYds: actualFabricYds.toFixed(2),
+            newStatus: order.status,
+            componentCount: items.length,
+          },
+        });
+
+        return {
+          statusCode: 201,
+          order,
+        };
       },
-      include: {
-        components: true,
-      },
-    });
-
-    if (!recipe) {
-      return res.status(404).json({
-        message: "Recipe not found.",
-      });
-    }
-
-    if (recipe.components.length === 0) {
-      return res.status(409).json({
-        message: "This recipe has no components.",
-      });
-    }
-
-    const items = recipe.components.map((component) => ({
-      componentId: component.id,
-      expectedQty: component.piecesPerGarment * targetQty,
-    }));
-
-    const invalidExpectedCount = items.some(
-      (item) =>
-        !Number.isSafeInteger(item.expectedQty) ||
-        item.expectedQty <= 0 ||
-        item.expectedQty > 2147483647
+      {
+        isolationLevel: "Serializable",
+      }
     );
 
-    if (invalidExpectedCount) {
-      return res.status(400).json({
-        message: "Batch quantity exceeds supported component counts.",
+    if (result.statusCode !== 201) {
+      return res.status(result.statusCode).json({
+        message: result.message,
       });
     }
-
-    const order = await prisma.cuttingOrder.create({
-      data: {
-        orderNo: `CUT-${randomUUID()}`,
-        recipeId: recipe.id,
-        targetQty,
-        fabricRollId: fabricRollId.trim(),
-        actualFabricYds: actualFabricYds.toFixed(2),
-        status: "PENDING_VERIFICATION",
-        createdBy: req.user.id,
-
-        verificationItems: {
-          create: items,
-        },
-      },
-      include: {
-        recipe: true,
-        verificationItems: {
-          include: {
-            component: true,
-          },
-        },
-      },
-    });
 
     return res.status(201).json({
       message: "Cutting order created successfully.",
-      order,
+      order: result.order,
     });
   } catch (error) {
+    if (error.code === "P2034") {
+      return res.status(409).json({
+        message:
+          "Another update occurred at the same time. Refresh and retry.",
+      });
+    }
+
     console.error("Create order failed:", error.message);
 
     return res.status(500).json({
@@ -226,22 +282,16 @@ export async function resubmitOrder(req, res) {
     const { actualFabricYds } = body;
 
     if (
-      Object.keys(body).some((key) => key !== "actualFabricYds")
+      Object.keys(body).some(
+        (key) => key !== "actualFabricYds"
+      )
     ) {
       return res.status(400).json({
         message: "Only actualFabricYds is accepted.",
       });
     }
 
-    if (
-      typeof actualFabricYds !== "number" ||
-      !Number.isFinite(actualFabricYds) ||
-      actualFabricYds <= 0 ||
-      actualFabricYds > 99999999.99 ||
-      !Number.isSafeInteger(
-        Number((actualFabricYds * 100).toFixed(8))
-      )
-    ) {
+    if (!isValidFabricUsage(actualFabricYds)) {
       return res.status(400).json({
         message:
           "Total fabric usage must be positive with at most 2 decimal places.",
@@ -300,13 +350,29 @@ export async function resubmitOrder(req, res) {
           };
         }
 
-        await tx.verificationItem.updateMany({
+        const reset = await tx.verificationItem.updateMany({
           where: {
             orderId: order.id,
           },
           data: {
             actualQty: null,
             status: null,
+          },
+        });
+
+        await recordActivity(tx, {
+          user: req.user,
+          action: "ORDER_RESUBMITTED",
+          orderId: order.id,
+          metadata: {
+            orderNo: order.orderNo,
+            previousStatus: order.status,
+            newStatus: "PENDING_VERIFICATION",
+            previousActualFabricYds:
+              order.actualFabricYds.toFixed(2),
+            newActualFabricYds:
+              actualFabricYds.toFixed(2),
+            resetComponentCount: reset.count,
           },
         });
 
