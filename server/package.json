@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node scripts/test-env.js test",
+    "test:db:migrate": "node scripts/test-env.js migrate",
+    "test:db:seed": "node scripts/test-env.js seed"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +28,8 @@
   },
   "devDependencies": {
     "dotenv-cli": "^11.0.0",
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "supertest": "^7.3.1",
+    "vitest": "^3.2.7"
   }
 }
