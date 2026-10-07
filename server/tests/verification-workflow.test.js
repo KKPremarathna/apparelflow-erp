@@ -12,9 +12,17 @@ import {
 import app from "../src/app.js";
 import prisma from "../src/db/prisma.js";
 
-const supervisor = request.agent(app);
-const verifier = request.agent(app);
-const sewing = request.agent(app);
+const supervisor = request
+  .agent(app)
+  .set("X-CSRF-Protection", "1");
+
+const verifier = request
+  .agent(app)
+  .set("X-CSRF-Protection", "1");
+
+const sewing = request
+  .agent(app)
+  .set("X-CSRF-Protection", "1");
 
 let recipeId;
 
@@ -432,6 +440,34 @@ describe("Verification workflow integration tests", () => {
             originalLog.componentSnapshot
         );
         });
+
+        it("blocks login without the CSRF protection header", async () => {
+            await request(app)
+                .post("/api/auth/login")
+                .send({
+                email: "supervisor@apparelflow.demo",
+                password: "unused-for-this-test",
+                })
+                .expect(403)
+                .expect({
+                message: "Required CSRF protection header is missing.",
+                });
+            });
+
+            it("blocks login from an untrusted origin", async () => {
+            await request(app)
+                .post("/api/auth/login")
+                .set("X-CSRF-Protection", "1")
+                .set("Origin", "https://untrusted.example")
+                .send({
+                email: "supervisor@apparelflow.demo",
+                password: "unused-for-this-test",
+                })
+                .expect(403)
+                .expect({
+                message: "Request origin is not allowed.",
+                });
+            });
 
   afterAll(async () => {
     await prisma.$disconnect();

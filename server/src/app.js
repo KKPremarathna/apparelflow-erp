@@ -8,6 +8,9 @@ import recipeRoutes from "./routes/recipeRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import verificationRoutes from "./routes/verificationRoutes.js";
 import sewingRoutes from "./routes/sewingRoutes.js";
+import {
+  csrfProtection,
+} from "./middleware/csrfProtection.js";
 
 const app = express();
 
@@ -18,6 +21,10 @@ app.use(
   cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
+    allowedHeaders: [
+      "Content-Type",
+      "X-CSRF-Protection",
+    ],
   })
 );
 
@@ -30,6 +37,8 @@ app.get("/api/health", (req, res) => {
     message: "ApparelFlow API is running",
   });
 });
+
+app.use("/api", csrfProtection);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/recipes", recipeRoutes);
