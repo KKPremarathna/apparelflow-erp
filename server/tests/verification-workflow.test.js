@@ -209,6 +209,230 @@ describe("Verification workflow integration tests", () => {
     ).toBe(true);
   });
 
+
+
+  it("blocks approval when component counts are missing", async () => {
+    const order = await createBatch();
+
+    await verifier
+        .post(`/api/verification/orders/${order.id}/approve`)
+        .expect(422);
+
+    const storedOrder = await prisma.cuttingOrder.findUnique({
+        where: { id: order.id },
+        include: { verificationLogs: true },
+    });
+
+    expect(storedOrder.status).toBe("PENDING_VERIFICATION");
+    expect(storedOrder.verificationLogs).toHaveLength(0);
+    });
+
+    it("blocks rejection when component counts are missing", async () => {
+    const order = await createBatch();
+
+    await verifier
+        .post(`/api/verification/orders/${order.id}/reject`)
+        .send({
+        rejectionNote: "Needs correction.",
+        })
+        .expect(422);
+
+    const storedOrder = await prisma.cuttingOrder.findUnique({
+        where: { id: order.id },
+        include: { verificationLogs: true },
+    });
+
+    expect(storedOrder.status).toBe("PENDING_VERIFICATION");
+    expect(storedOrder.verificationLogs).toHaveLength(0);
+    });
+
+    it("resubmits a rejected batch and preserves its rejection audit", async () => {
+    const order = await createBatch();
+    await saveCounts(order, true);
+
+    const rejection = await verifier
+        .post(`/api/verification/orders/${order.id}/reject`)
+        .send({
+        rejectionNote: "Re-cut the missing component.",
+        })
+        .expect(200);
+
+    const originalLog = await prisma.verificationLog.findUnique({
+        where: {
+        id: rejection.body.auditLog.id,
+        },
+    });
+
+    expect(originalLog).not.toBeNull();
+
+    await supervisor
+        .post(`/api/orders/${order.id}/resubmit`)
+        .send({
+        actualFabricYds: 93,
+        })
+        .expect(200);
+
+    const resubmittedOrder = await prisma.cuttingOrder.findUnique({
+        where: { id: order.id },
+        include: {
+        verificationItems: true,
+        verificationLogs: true,
+        },
+    });
+
+    expect(resubmittedOrder.status).toBe("PENDING_VERIFICATION");
+    expect(Number(resubmittedOrder.actualFabricYds)).toBe(93);
+
+    expect(resubmittedOrder.verificationItems).toHaveLength(
+        order.verificationItems.length
+    );
+
+    expect(
+        resubmittedOrder.verificationItems.every(
+        (item) => item.actualQty === null && item.status === null
+        )
+    ).toBe(true);
+
+    const preservedLog = resubmittedOrder.verificationLogs.find(
+        (log) => log.id === originalLog.id
+    );
+
+    expect(preservedLog).toBeDefined();
+    expect(preservedLog.rejectionNote).toBe(originalLog.rejectionNote);
+    expect(preservedLog.componentSnapshot).toEqual(
+        originalLog.componentSnapshot
+    );
+    expect(preservedLog.verifierId).toBe(originalLog.verifierId);
+    expect(preservedLog.createdAt).toEqual(originalLog.createdAt);
+    expect(Number(preservedLog.wastagePct)).toBe(
+        Number(originalLog.wastagePct)
+    );
+
+    // Fresh counts are required after resubmission.
+    await verifier
+        .post(`/api/verification/orders/${order.id}/approve`)
+        .expect(422);
+    });
+
+    it("starts sewing once and removes the batch from the waiting queue", async () => {
+    const order = await createBatch();
+    await saveCounts(order);
+
+    const approval = await verifier
+        .post(`/api/verification/orders/${order.id}/approve`)
+        .expect(200);
+
+    const start = await sewing
+        .post(`/api/sewing/orders/${order.id}/start`)
+        .expect(200);
+
+    expect(start.body.status).toBe("SEWING_IN_PROGRESS");
+
+    await sewing
+        .post(`/api/sewing/orders/${order.id}/start`)
+        .expect(409);
+
+    const queue = await sewing
+        .get("/api/sewing/queue")
+        .expect(200);
+
+    expect(
+        queue.body.orders.some((item) => item.id === order.id)
+    ).toBe(false);
+
+    const details = await sewing
+        .get(`/api/sewing/orders/${order.id}`)
+        .expect(200);
+
+    expect(details.body.order.status).toBe("SEWING_IN_PROGRESS");
+
+    const storedOrder = await prisma.cuttingOrder.findUnique({
+        where: { id: order.id },
+        include: { verificationLogs: true },
+    });
+
+    expect(storedOrder.status).toBe("SEWING_IN_PROGRESS");
+    expect(storedOrder.verificationLogs).toHaveLength(1);
+    expect(storedOrder.verificationLogs[0].id).toBe(
+        approval.body.auditLog.id
+    );
+    });
+
+    it("blocks updating an existing verification audit log", async () => {
+        const order = await createBatch();
+        await saveCounts(order);
+
+        const approval = await verifier
+            .post(`/api/verification/orders/${order.id}/approve`)
+            .expect(200);
+
+        const logId = approval.body.auditLog.id;
+
+        const originalLog = await prisma.verificationLog.findUnique({
+            where: { id: logId },
+        });
+
+        expect(originalLog).not.toBeNull();
+
+        await expect(
+            prisma.verificationLog.update({
+            where: { id: logId },
+            data: {
+                wastagePct: "99.99",
+            },
+            })
+        ).rejects.toThrow("Verification audit logs are immutable.");
+
+        const preservedLog = await prisma.verificationLog.findUnique({
+            where: { id: logId },
+        });
+
+        expect(preservedLog).not.toBeNull();
+        expect(Number(preservedLog.wastagePct)).toBe(
+            Number(originalLog.wastagePct)
+        );
+        expect(preservedLog.componentSnapshot).toEqual(
+            originalLog.componentSnapshot
+        );
+        });
+
+        it("blocks deleting an existing verification audit log", async () => {
+        const order = await createBatch();
+        await saveCounts(order, true);
+
+        const rejection = await verifier
+            .post(`/api/verification/orders/${order.id}/reject`)
+            .send({
+            rejectionNote: "Component shortage recorded for audit test.",
+            })
+            .expect(200);
+
+        const logId = rejection.body.auditLog.id;
+
+        const originalLog = await prisma.verificationLog.findUnique({
+            where: { id: logId },
+        });
+
+        expect(originalLog).not.toBeNull();
+
+        await expect(
+            prisma.verificationLog.delete({
+            where: { id: logId },
+            })
+        ).rejects.toThrow("Verification audit logs are immutable.");
+
+        const preservedLog = await prisma.verificationLog.findUnique({
+            where: { id: logId },
+        });
+
+        expect(preservedLog).not.toBeNull();
+        expect(preservedLog.decision).toBe("REJECTED");
+        expect(preservedLog.rejectionNote).toBe(originalLog.rejectionNote);
+        expect(preservedLog.componentSnapshot).toEqual(
+            originalLog.componentSnapshot
+        );
+        });
+
   afterAll(async () => {
     await prisma.$disconnect();
   });
