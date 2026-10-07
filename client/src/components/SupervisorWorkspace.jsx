@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import SupervisorOrderDetails from "./SupervisorOrderDetails";
 
 const emptyForm = {
   recipeId: "",
@@ -10,8 +11,10 @@ const emptyForm = {
 
 function validateForm(form, recipe) {
   const errors = {};
+
   const quantityText = form.targetQty.trim();
   const fabricText = form.actualFabricYds.trim();
+
   const quantity = Number(quantityText);
   const fabric = Number(fabricText);
 
@@ -28,6 +31,7 @@ function validateForm(form, recipe) {
   } else if (
     recipe?.components.some((component) => {
       const expected = component.piecesPerGarment * quantity;
+
       return (
         !Number.isSafeInteger(expected) ||
         expected <= 0 ||
@@ -35,13 +39,15 @@ function validateForm(form, recipe) {
       );
     })
   ) {
-    errors.targetQty = "Quantity exceeds supported component counts.";
+    errors.targetQty =
+      "Quantity exceeds supported component counts.";
   }
 
   const rollId = form.fabricRollId.trim();
 
   if (!rollId || rollId.length > 100) {
-    errors.fabricRollId = "Enter a fabric roll ID of 1–100 characters.";
+    errors.fabricRollId =
+      "Enter a fabric roll ID of 1–100 characters.";
   }
 
   if (
@@ -60,13 +66,19 @@ function validateForm(form, recipe) {
 export default function SupervisorWorkspace() {
   const [recipes, setRecipes] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState({ ...emptyForm });
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitted, setSubmitted] = useState(false);
+
   const [reloadKey, setReloadKey] = useState(0);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+
+  const detailsRef = useRef(null);
 
   const selectedRecipe = recipes.find(
     (recipe) => recipe.id === form.recipeId
@@ -74,6 +86,7 @@ export default function SupervisorWorkspace() {
 
   const fieldErrors = validateForm(form, selectedRecipe);
   const quantity = Number(form.targetQty);
+
   const validQuantity =
     /^\d+$/.test(form.targetQty.trim()) &&
     Number.isSafeInteger(quantity) &&
@@ -89,8 +102,12 @@ export default function SupervisorWorkspace() {
 
       try {
         const [recipeData, orderData] = await Promise.all([
-          api("/recipes", { signal: controller.signal }),
-          api("/orders", { signal: controller.signal }),
+          api("/recipes", {
+            signal: controller.signal,
+          }),
+          api("/orders", {
+            signal: controller.signal,
+          }),
         ]);
 
         setRecipes(recipeData.recipes);
@@ -111,19 +128,47 @@ export default function SupervisorWorkspace() {
     return () => controller.abort();
   }, [reloadKey]);
 
+  useEffect(() => {
+    if (selectedOrderId && !loading) {
+      detailsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  }, [selectedOrderId, loading]);
+
   function updateField(event) {
     const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
+
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+
     setSuccess("");
+  }
+
+  function handleViewDetails(orderId) {
+    setSelectedOrderId(orderId);
+
+    if (selectedOrderId === orderId) {
+      detailsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
   }
 
   async function handleCreate(event) {
     event.preventDefault();
+
     setSubmitted(true);
     setError("");
     setSuccess("");
 
-    if (Object.keys(fieldErrors).length > 0) return;
+    if (Object.keys(fieldErrors).length > 0) {
+      return;
+    }
 
     setSaving(true);
 
@@ -138,7 +183,6 @@ export default function SupervisorWorkspace() {
         },
       });
 
-      // Update the list directly after a successful creation.
       setOrders((current) => [data.order, ...current]);
       setForm({ ...emptyForm });
       setSubmitted(false);
@@ -150,8 +194,29 @@ export default function SupervisorWorkspace() {
     }
   }
 
+  function handleResubmitted(updatedOrder) {
+    setOrders((current) =>
+      current.map((order) =>
+        order.id === updatedOrder.id
+          ? { ...order, ...updatedOrder }
+          : order
+      )
+    );
+  }
+
+  function handleRefresh() {
+    setSuccess("");
+    setReloadKey((current) => current + 1);
+  }
+
   if (loading) {
-    return <p role="status">Loading Supervisor workspace...</p>;
+    return (
+      <section className="panel">
+        <p role="status">
+          Loading Supervisor workspace...
+        </p>
+      </section>
+    );
   }
 
   return (
@@ -165,7 +230,11 @@ export default function SupervisorWorkspace() {
           </p>
         )}
 
-        {success && <p role="status">{success}</p>}
+        {success && (
+          <p role="status">
+            {success}
+          </p>
+        )}
 
         <form onSubmit={handleCreate} noValidate>
           <label htmlFor="recipeId">Recipe</label>
@@ -175,20 +244,28 @@ export default function SupervisorWorkspace() {
             value={form.recipeId}
             onChange={updateField}
             disabled={saving}
-            aria-invalid={submitted && Boolean(fieldErrors.recipeId)}
+            aria-invalid={
+              submitted && Boolean(fieldErrors.recipeId)
+            }
           >
             <option value="">Select a recipe</option>
+
             {recipes.map((recipe) => (
               <option key={recipe.id} value={recipe.id}>
                 {recipe.recipeCode} — {recipe.name}
               </option>
             ))}
           </select>
+
           {submitted && fieldErrors.recipeId && (
-            <p className="error">{fieldErrors.recipeId}</p>
+            <p className="error">
+              {fieldErrors.recipeId}
+            </p>
           )}
 
-          <label htmlFor="targetQty">Target batch quantity</label>
+          <label htmlFor="targetQty">
+            Target batch quantity
+          </label>
           <input
             id="targetQty"
             name="targetQty"
@@ -197,13 +274,20 @@ export default function SupervisorWorkspace() {
             value={form.targetQty}
             onChange={updateField}
             disabled={saving}
-            aria-invalid={submitted && Boolean(fieldErrors.targetQty)}
+            aria-invalid={
+              submitted && Boolean(fieldErrors.targetQty)
+            }
           />
+
           {submitted && fieldErrors.targetQty && (
-            <p className="error">{fieldErrors.targetQty}</p>
+            <p className="error">
+              {fieldErrors.targetQty}
+            </p>
           )}
 
-          <label htmlFor="fabricRollId">Fabric roll ID</label>
+          <label htmlFor="fabricRollId">
+            Fabric roll ID
+          </label>
           <input
             id="fabricRollId"
             name="fabricRollId"
@@ -213,10 +297,15 @@ export default function SupervisorWorkspace() {
             value={form.fabricRollId}
             onChange={updateField}
             disabled={saving}
-            aria-invalid={submitted && Boolean(fieldErrors.fabricRollId)}
+            aria-invalid={
+              submitted && Boolean(fieldErrors.fabricRollId)
+            }
           />
+
           {submitted && fieldErrors.fabricRollId && (
-            <p className="error">{fieldErrors.fabricRollId}</p>
+            <p className="error">
+              {fieldErrors.fabricRollId}
+            </p>
           )}
 
           <label htmlFor="actualFabricYds">
@@ -234,8 +323,11 @@ export default function SupervisorWorkspace() {
               submitted && Boolean(fieldErrors.actualFabricYds)
             }
           />
+
           {submitted && fieldErrors.actualFabricYds && (
-            <p className="error">{fieldErrors.actualFabricYds}</p>
+            <p className="error">
+              {fieldErrors.actualFabricYds}
+            </p>
           )}
 
           <button
@@ -249,13 +341,16 @@ export default function SupervisorWorkspace() {
         </form>
 
         {recipes.length === 0 && (
-          <p>No recipes available. Check the database seed.</p>
+          <p>
+            No recipes available. Check the database seed.
+          </p>
         )}
       </section>
 
       {selectedRecipe && (
         <section className="panel">
           <h2>Expected component counts</h2>
+
           <p>
             Preview only. The backend calculates the saved counts.
           </p>
@@ -269,6 +364,7 @@ export default function SupervisorWorkspace() {
                   <th>Expected pieces</th>
                 </tr>
               </thead>
+
               <tbody>
                 {selectedRecipe.components.map((component) => (
                   <tr key={component.id}>
@@ -290,10 +386,11 @@ export default function SupervisorWorkspace() {
       <section className="panel">
         <div className="section-heading">
           <h2>My cutting orders</h2>
+
           <button
             type="button"
             disabled={saving}
-            onClick={() => setReloadKey((current) => current + 1)}
+            onClick={handleRefresh}
           >
             Refresh
           </button>
@@ -311,16 +408,38 @@ export default function SupervisorWorkspace() {
                   <th>Quantity</th>
                   <th>Fabric yards</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
+
               <tbody>
                 {orders.map((order) => (
                   <tr key={order.id}>
                     <td>{order.orderNo}</td>
                     <td>{order.recipe.name}</td>
                     <td>{order.targetQty}</td>
-                    <td>{Number(order.actualFabricYds).toFixed(2)}</td>
+                    <td>
+                      {Number(order.actualFabricYds).toFixed(2)}
+                    </td>
                     <td>{order.status}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleViewDetails(order.id)
+                        }
+                        aria-expanded={
+                          selectedOrderId === order.id
+                        }
+                        aria-controls={
+                          selectedOrderId === order.id
+                            ? "supervisor-order-details"
+                            : undefined
+                        }
+                      >
+                        View details
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -328,6 +447,20 @@ export default function SupervisorWorkspace() {
           </div>
         )}
       </section>
+
+      {selectedOrderId && (
+        <div
+          id="supervisor-order-details"
+          ref={detailsRef}
+        >
+          <SupervisorOrderDetails
+            key={selectedOrderId}
+            orderId={selectedOrderId}
+            onClose={() => setSelectedOrderId(null)}
+            onResubmitted={handleResubmitted}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
-
 import SupervisorWorkspace from "./components/SupervisorWorkspace";
 
 export default function App() {
@@ -20,6 +19,7 @@ export default function App() {
         const data = await api("/auth/me", {
           signal: controller.signal,
         });
+
         setUser(data.user);
       } catch (err) {
         if (err.name === "AbortError") return;
@@ -73,13 +73,16 @@ export default function App() {
     setBusy(true);
 
     try {
-      await api("/auth/logout", { method: "POST" });
+      await api("/auth/logout", {
+        method: "POST",
+      });
+
       setUser(null);
       setPassword("");
     } catch (err) {
-      // An already-expired session should return to login.
       if (err.status === 401) {
         setUser(null);
+        setPassword("");
       } else {
         setError(err.message);
       }
@@ -100,10 +103,15 @@ export default function App() {
     return (
       <main className="container">
         <h1>ApparelFlow</h1>
-        <p role="alert" className="error">
+
+        <p className="error" role="alert">
           Unable to check session: {sessionError}
         </p>
-        <button onClick={() => window.location.reload()}>
+
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+        >
           Retry
         </button>
       </main>
@@ -116,27 +124,38 @@ export default function App() {
       <p>Cutting Verification & Sewing Queue</p>
 
       {user ? (
-        <section className="panel">
-          <h2>Welcome, {user.fullName}</h2>
-          <p>Email: {user.email}</p>
-          <p>Role: {user.role}</p>
+        <>
+          <section className="panel">
+            <div className="section-heading">
+              <h2>Welcome, {user.fullName}</h2>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={busy}
+              >
+                {busy ? "Please wait..." : "Logout"}
+              </button>
+            </div>
+
+            <p>Email: {user.email}</p>
+            <p>Role: {user.role}</p>
+
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+          </section>
 
           {user.role === "cutting_supervisor" ? (
             <SupervisorWorkspace key={user.id} />
           ) : (
-            <p>Your role workspace will be added next.</p>
+            <section className="panel">
+              <p>Your role workspace will be added next.</p>
+            </section>
           )}
-
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-
-          <button onClick={handleLogout} disabled={busy}>
-            {busy ? "Please wait..." : "Logout"}
-          </button>
-        </section>
+        </>
       ) : (
         <section className="panel">
           <h2>Login</h2>
