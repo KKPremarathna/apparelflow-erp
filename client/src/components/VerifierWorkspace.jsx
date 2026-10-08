@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import {
+  QcStatusBadge,
+  DecisionButton,
+} from "./WorkflowStatus";
 
 function parseCount(value) {
   const text = String(value).trim();
@@ -26,35 +30,6 @@ function getQcStatus(actual, expected) {
   return "GREEN";
 }
 
-function StatusBadge({ status }) {
-  const labels = {
-    GREEN: "GREEN — Match",
-    YELLOW: "YELLOW — Excess",
-    RED: "RED — Shortage",
-    UNCOUNTED: "Not counted / invalid",
-  };
-
-  const colors = {
-    GREEN: { background: "#dcfce7", color: "#14532d" },
-    YELLOW: { background: "#fef3c7", color: "#78350f" },
-    RED: { background: "#fee2e2", color: "#991b1b" },
-    UNCOUNTED: { background: "#e5e7eb", color: "#111827" },
-  };
-
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "6px 8px",
-        borderRadius: "4px",
-        ...colors[status],
-      }}
-    >
-      {labels[status]}
-    </span>
-  );
-}
-
 function VerificationTerminal({ orderId, onClose, onCompleted }) {
   const [order, setOrder] = useState(null);
   const [drafts, setDrafts] = useState({});
@@ -78,6 +53,8 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
           { signal: controller.signal }
         );
 
+        if (controller.signal.aborted) return;
+
         setOrder(data.order);
 
         const initialDrafts = Object.fromEntries(
@@ -89,7 +66,7 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
 
         setDrafts(initialDrafts);
       } catch (err) {
-        if (err.name !== "AbortError") {
+        if (!controller.signal.aborted && err.name !== "AbortError") {
           setError(err.message);
         }
       } finally {
@@ -124,10 +101,14 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
   );
 
   const canApprove = allCountsSaved && !hasShortage;
+
   const validReason =
-    reason.trim().length > 0 && reason.trim().length <= 2000;
+    reason.trim().length > 0 &&
+    reason.trim().length <= 2000;
 
   async function saveCount(itemId) {
+    if (busy) return;
+
     const actualQty = parseCount(drafts[itemId] ?? "");
 
     setError("");
@@ -169,6 +150,8 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
   }
 
   async function handleDecision(decision) {
+    if (busy) return;
+
     setError("");
     setMessage("");
 
@@ -247,6 +230,7 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
           >
             Reload saved counts
           </button>{" "}
+
           <button
             type="button"
             onClick={closeDetails}
@@ -268,10 +252,14 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
       {loading ? (
         <p role="status">Loading batch...</p>
       ) : !order ? (
-        <p>Unable to load this pending batch. Close and refresh the list.</p>
+        <p>
+          Unable to load this pending batch. Close and refresh the list.
+        </p>
       ) : (
         <>
-          <p>Order: {order.orderNo}</p>
+          <p style={{ overflowWrap: "anywhere" }}>
+            Order: {order.orderNo}
+          </p>
           <p>Recipe: {order.recipe.name}</p>
           <p>Supervisor: {order.creator.fullName}</p>
           <p>Target quantity: {order.targetQty}</p>
@@ -303,14 +291,17 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
                 {items.map((item) => {
                   const draft = drafts[item.id] ?? "";
                   const parsed = parseCount(draft);
+
                   const previewStatus = getQcStatus(
                     parsed,
                     item.expectedQty
                   );
+
                   const savedStatus = getQcStatus(
                     item.actualQty,
                     item.expectedQty
                   );
+
                   const isSaved =
                     parsed !== null && parsed === item.actualQty;
 
@@ -347,12 +338,12 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
                       </td>
 
                       <td>
-                        <StatusBadge status={previewStatus} />
+                        <QcStatusBadge status={previewStatus} />
                       </td>
 
                       <td>
                         <p>{item.actualQty ?? "Not counted"}</p>
-                        <StatusBadge status={savedStatus} />
+                        <QcStatusBadge status={savedStatus} />
                       </td>
 
                       <td>
@@ -371,52 +362,91 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
             </table>
           </div>
 
-          <br />
-          {allCountsSaved && hasShortage && (
-            <p className="error">
-              Shortage detected. Approval is blocked. Enter a reason
-              to reject this batch.
-            </p>
-          )}
-
-          {canApprove && (
-            <p>
-              All saved components match or exceed their expected
-              counts. This batch can be approved.
-            </p>
-          )}
-
-          <button
-            type="button"
-            disabled={busy || !canApprove}
-            onClick={() => handleDecision("approve")}
+          <div
+            style={{
+              marginTop: "24px",
+              paddingTop: "20px",
+              borderTop: "1px solid #e5e9f0",
+            }}
           >
-            {busy ? "Please wait..." : "Approve Batch"}
-          </button>
+            {allCountsSaved && hasShortage && (
+              <p className="error">
+                Shortage detected. Approval is blocked.
+              </p>
+            )}
 
-          <h3>Reject batch</h3>
+            {canApprove && (
+              <p style={{ color: "#247343" }}>
+                All saved components match or exceed their expected
+                counts. This batch can be approved.
+              </p>
+            )}
 
-          <label htmlFor="rejectionNote">
-            Mandatory rejection reason
-          </label>
-          <textarea
-            id="rejectionNote"
-            rows={4}
-            maxLength={2000}
-            value={reason}
-            disabled={busy}
-            onChange={(event) => setReason(event.target.value)}
-          />
+            <DecisionButton
+              variant="approve"
+              type="button"
+              disabled={busy || !canApprove}
+              onClick={() => handleDecision("approve")}
+            >
+              {busy ? "Please wait..." : "Approve Batch"}
+            </DecisionButton>
+          </div>
 
-          <p>{reason.trim().length}/2000 characters</p>
-
-          <button
-            type="button"
-            disabled={busy || !allCountsSaved || !validReason}
-            onClick={() => handleDecision("reject")}
+          <section
+            style={{
+              marginTop: "24px",
+              padding: "20px",
+              border: "1px solid #f4bdc5",
+              borderRadius: "5px",
+              backgroundColor: "#fffafb",
+            }}
           >
-            {busy ? "Please wait..." : "Reject Batch"}
-          </button>
+            <h3 style={{ color: "#b3374b" }}>
+              Reject batch
+            </h3>
+
+            <div
+              style={{
+                display: "grid",
+                gap: "10px",
+              }}
+            >
+              <label htmlFor="rejectionNote">
+                Mandatory rejection reason
+              </label>
+
+              <textarea
+                id="rejectionNote"
+                rows={4}
+                maxLength={2000}
+                value={reason}
+                disabled={busy}
+                placeholder="Explain why this batch should be rejected..."
+                onChange={(event) => setReason(event.target.value)}
+              />
+
+              <p
+                style={{
+                  margin: 0,
+                  color: "#8c7580",
+                  fontSize: "12px",
+                }}
+              >
+                {reason.trim().length}/2000 characters
+              </p>
+
+              <div>
+                <DecisionButton
+                  variant="reject"
+                  type="button"
+                  disabled={busy || !allCountsSaved || !validReason}
+                  onClick={() => handleDecision("reject")}
+                >
+                  {busy ? "Please wait..." : "Reject Batch"}
+                </DecisionButton>
+              </div>
+            </div>
+          </section>
         </>
       )}
     </section>
@@ -443,9 +473,11 @@ export default function VerifierWorkspace() {
           signal: controller.signal,
         });
 
-        setOrders(data.orders);
+        if (!controller.signal.aborted) {
+          setOrders(data.orders);
+        }
       } catch (err) {
-        if (err.name !== "AbortError") {
+        if (!controller.signal.aborted && err.name !== "AbortError") {
           setError(err.message);
         }
       } finally {
@@ -497,7 +529,9 @@ export default function VerifierWorkspace() {
         </div>
 
         {selectedOrderId && (
-          <p>Close the current terminal to refresh or select another batch.</p>
+          <p>
+            Close the current terminal to refresh or select another batch.
+          </p>
         )}
 
         {error && (
@@ -539,6 +573,7 @@ export default function VerifierWorkspace() {
                         onClick={() => {
                           setMessage("");
                           setSelectedOrderId(order.id);
+
                           window.scrollTo({
                             top: 0,
                             behavior: "smooth",

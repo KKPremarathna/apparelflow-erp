@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import {
+  WorkflowStatusBadge,
+  QcStatusBadge,
+  getDecisionBorderColor,
+} from "./WorkflowStatus";
 
 export default function SupervisorOrderDetails({
   orderId,
@@ -26,10 +31,12 @@ export default function SupervisorOrderDetails({
           signal: controller.signal,
         });
 
-        setOrder(data.order);
-        setFabric(String(data.order.actualFabricYds));
+        if (!controller.signal.aborted) {
+          setOrder(data.order);
+          setFabric(String(data.order.actualFabricYds));
+        }
       } catch (err) {
-        if (err.name !== "AbortError") {
+        if (!controller.signal.aborted && err.name !== "AbortError") {
           setError(err.message);
         }
       } finally {
@@ -40,11 +47,15 @@ export default function SupervisorOrderDetails({
     }
 
     loadDetails();
+
     return () => controller.abort();
   }, [orderId, reloadKey]);
 
   async function handleResubmit(event) {
     event.preventDefault();
+
+    if (busy || !order) return;
+
     setError("");
     setSuccess("");
 
@@ -98,7 +109,12 @@ export default function SupervisorOrderDetails({
     <section className="panel">
       <div className="section-heading">
         <h2>Order details</h2>
-        <button type="button" onClick={onClose} disabled={busy}>
+
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+        >
           Close
         </button>
       </div>
@@ -122,7 +138,9 @@ export default function SupervisorOrderDetails({
         </button>
       ) : (
         <>
-          <p>Order: {order.orderNo}</p>
+          <p style={{ overflowWrap: "anywhere" }}>
+            Order: {order.orderNo}
+          </p>
           <p>Recipe: {order.recipe.name}</p>
           <p>Target quantity: {order.targetQty}</p>
           <p>Fabric roll: {order.fabricRollId}</p>
@@ -130,7 +148,10 @@ export default function SupervisorOrderDetails({
             Recorded fabric:{" "}
             {Number(order.actualFabricYds).toFixed(2)} yards
           </p>
-          <p>Status: {order.status}</p>
+
+          <p>
+            Status: <WorkflowStatusBadge status={order.status} />
+          </p>
 
           <h3>Component counts</h3>
 
@@ -144,27 +165,41 @@ export default function SupervisorOrderDetails({
                   <th>QC status</th>
                 </tr>
               </thead>
+
               <tbody>
                 {order.verificationItems.map((item) => (
                   <tr key={item.id}>
                     <td>{item.component.componentName}</td>
                     <td>{item.expectedQty}</td>
                     <td>{item.actualQty ?? "Not counted"}</td>
-                    <td>{item.status ?? "Not counted"}</td>
+                    <td>
+                      <QcStatusBadge status={item.status} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <h3>Verification history</h3>
+          <h3 style={{ marginTop: "24px" }}>
+            Verification history
+          </h3>
 
           {order.verificationLogs.length === 0 ? (
             <p>No verification decisions yet.</p>
           ) : (
             order.verificationLogs.map((log) => (
-              <article className="audit-entry" key={log.id}>
-                <p>Decision: {log.decision}</p>
+              <article
+                className="audit-entry"
+                key={log.id}
+                style={{
+                  borderLeftColor: getDecisionBorderColor(log.decision),
+                }}
+              >
+                <p>
+                  Decision:{" "}
+                  <WorkflowStatusBadge status={log.decision} />
+                </p>
                 <p>Verifier: {log.verifier.fullName}</p>
                 <p>
                   Time: {new Date(log.createdAt).toLocaleString()}
@@ -175,16 +210,28 @@ export default function SupervisorOrderDetails({
                     ? "Not recorded"
                     : `${Number(log.wastagePct).toFixed(2)}%`}
                 </p>
+
                 {log.rejectionNote && (
-                  <p>Rejection reason: {log.rejectionNote}</p>
+                  <p style={{ color: "#b3374b" }}>
+                    Rejection reason: {log.rejectionNote}
+                  </p>
                 )}
               </article>
             ))
           )}
 
           {order.status === "REJECTED" && (
-            <>
+            <section
+              style={{
+                marginTop: "24px",
+                padding: "20px",
+                border: "1px solid #f4bdc5",
+                borderRadius: "5px",
+                backgroundColor: "#fffafb",
+              }}
+            >
               <h3>Resubmit after re-cutting</h3>
+
               <p>
                 Enter total fabric used, including any extra fabric
                 used for re-cutting. Every component must be counted
@@ -195,6 +242,7 @@ export default function SupervisorOrderDetails({
                 <label htmlFor="resubmitFabric">
                   Total fabric used (yards)
                 </label>
+
                 <input
                   id="resubmitFabric"
                   type="text"
@@ -206,13 +254,14 @@ export default function SupervisorOrderDetails({
                   }}
                   disabled={busy}
                 />
+
                 <button type="submit" disabled={busy}>
                   {busy
                     ? "Resubmitting..."
                     : "Resubmit for Verification"}
                 </button>
               </form>
-            </>
+            </section>
           )}
         </>
       )}

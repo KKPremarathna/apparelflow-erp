@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import SupervisorOrderDetails from "./SupervisorOrderDetails";
+import { WorkflowStatusBadge } from "./WorkflowStatus";
 import "./WorkspaceLayouts.css";
 
 const emptyForm = {
@@ -67,9 +68,14 @@ function FormField({ label, name, error, children, hint }) {
   return (
     <div className="af-form-field">
       <label htmlFor={name}>{label}</label>
+
       {children}
 
-      {hint && <p className="af-field-hint">{hint}</p>}
+      {hint && (
+        <p className="af-field-hint">
+          {hint}
+        </p>
+      )}
 
       {error && (
         <p id={`${name}-error`} className="af-field-error">
@@ -86,7 +92,9 @@ function ChecklistItem({ complete, children }) {
       <span className="af-check-icon" aria-hidden="true">
         {complete ? "✓" : "○"}
       </span>
+
       <span>{children}</span>
+
       <span className="af-sr-only">
         {complete ? " — complete" : " — incomplete"}
       </span>
@@ -137,8 +145,12 @@ export default function SupervisorWorkspace() {
 
       try {
         const [recipeData, orderData] = await Promise.all([
-          api("/recipes", { signal: controller.signal }),
-          api("/orders", { signal: controller.signal }),
+          api("/recipes", {
+            signal: controller.signal,
+          }),
+          api("/orders", {
+            signal: controller.signal,
+          }),
         ]);
 
         if (!controller.signal.aborted) {
@@ -262,7 +274,9 @@ export default function SupervisorWorkspace() {
   if (loading) {
     return (
       <section className="panel">
-        <p role="status">Loading Supervisor workspace...</p>
+        <p role="status">
+          Loading Supervisor workspace...
+        </p>
       </section>
     );
   }
@@ -272,8 +286,12 @@ export default function SupervisorWorkspace() {
       <section className="panel af-layout-panel">
         <div className="section-heading af-section-heading">
           <div>
-            <p className="af-kicker">NEW PRODUCTION BATCH</p>
+            <p className="af-kicker">
+              NEW PRODUCTION BATCH
+            </p>
+
             <h2>Create cutting order</h2>
+
             <p className="af-subtitle">
               Enter batch details and review the preview before submitting.
             </p>
@@ -302,6 +320,7 @@ export default function SupervisorWorkspace() {
               <span className="af-card-icon" aria-hidden="true">
                 01
               </span>
+
               <div>
                 <h3>Order information</h3>
                 <p>All four fields are required</p>
@@ -327,7 +346,9 @@ export default function SupervisorWorkspace() {
                   required
                   {...fieldAccessibility("recipeId")}
                 >
-                  <option value="">Select a recipe</option>
+                  <option value="">
+                    Select a recipe
+                  </option>
 
                   {recipes.map((recipe) => (
                     <option key={recipe.id} value={recipe.id}>
@@ -428,17 +449,23 @@ export default function SupervisorWorkspace() {
               <span className="af-badge af-badge-violet">
                 Live preview
               </span>
+
               <h3>Batch summary</h3>
+
               <p>
                 Your batch details appear here as you complete the form.
               </p>
             </div>
 
             <div className="af-preview-recipe">
-              <span className="af-preview-label">Selected recipe</span>
+              <span className="af-preview-label">
+                Selected recipe
+              </span>
+
               <span className="af-preview-recipe-name">
                 {selectedRecipe?.name || "No recipe selected"}
               </span>
+
               <span className="af-preview-category">
                 {selectedRecipe
                   ? selectedRecipe.category || "—"
@@ -453,10 +480,14 @@ export default function SupervisorWorkspace() {
                   {validQuantity ? `${quantity} garments` : "—"}
                 </dd>
               </div>
+
               <div>
                 <dt>Fabric roll</dt>
-                <dd>{form.fabricRollId.trim() || "—"}</dd>
+                <dd>
+                  {form.fabricRollId.trim() || "—"}
+                </dd>
               </div>
+
               <div>
                 <dt>Fabric used</dt>
                 <dd>
@@ -465,6 +496,7 @@ export default function SupervisorWorkspace() {
                     : "—"}
                 </dd>
               </div>
+
               <div>
                 <dt>Recipe components</dt>
                 <dd>
@@ -477,16 +509,20 @@ export default function SupervisorWorkspace() {
 
             <div className="af-checklist">
               <h4>Submission checklist</h4>
+
               <ul>
                 <ChecklistItem complete={Boolean(selectedRecipe)}>
                   Recipe selected
                 </ChecklistItem>
+
                 <ChecklistItem complete={Boolean(validQuantity)}>
                   Valid batch quantity
                 </ChecklistItem>
+
                 <ChecklistItem complete={validRoll}>
                   Fabric roll entered
                 </ChecklistItem>
+
                 <ChecklistItem complete={validFabric}>
                   Valid fabric amount
                 </ChecklistItem>
@@ -511,13 +547,16 @@ export default function SupervisorWorkspace() {
           <div className="af-table-heading">
             <div>
               <h2>Expected component counts</h2>
+
               <p className="af-subtitle">
                 Preview only. The backend calculates the saved counts.
               </p>
             </div>
 
             <span className="af-badge af-badge-neutral">
-              {validQuantity ? `${quantity} garments` : "Enter quantity"}
+              {validQuantity
+                ? `${quantity} garments`
+                : "Enter quantity"}
             </span>
           </div>
 
@@ -552,7 +591,10 @@ export default function SupervisorWorkspace() {
       <section className="panel af-layout-panel">
         <div className="section-heading af-section-heading">
           <div>
-            <p className="af-kicker">ORDER HISTORY</p>
+            <p className="af-kicker">
+              ORDER HISTORY
+            </p>
+
             <h2>My cutting orders</h2>
           </div>
 
@@ -567,7 +609,9 @@ export default function SupervisorWorkspace() {
         </div>
 
         {orders.length === 0 ? (
-          <p className="af-empty">No cutting orders yet.</p>
+          <p className="af-empty">
+            No cutting orders yet.
+          </p>
         ) : (
           <div className="table-scroll">
             <table className="af-data-table">
@@ -585,17 +629,22 @@ export default function SupervisorWorkspace() {
               <tbody>
                 {orders.map((order) => (
                   <tr key={order.id}>
-                    <td className="af-order-cell">{order.orderNo}</td>
+                    <td className="af-order-cell">
+                      {order.orderNo}
+                    </td>
+
                     <td>{order.recipe?.name}</td>
+
                     <td>{order.targetQty}</td>
+
                     <td>
                       {Number(order.actualFabricYds).toFixed(2)}
                     </td>
+
                     <td>
-                      <span className="af-badge af-badge-neutral">
-                        {order.status}
-                      </span>
+                      <WorkflowStatusBadge status={order.status} />
                     </td>
+
                     <td>
                       <button
                         type="button"
