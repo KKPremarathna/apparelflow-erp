@@ -9,6 +9,10 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({
   adapter,
   log: ["error"],
+
+  transactionOptions: {
+    timeout: 15000,
+  },
 });
 
 export default prisma;

@@ -282,8 +282,8 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
           </p>
 
           <p>
-            Enter each physical count and click Save. Preview status
-            is not a saved verification result.
+            (Enter each physical count and click Save. Preview status
+            is not a saved verification result.)
           </p>
 
           <div className="table-scroll">
@@ -371,13 +371,7 @@ function VerificationTerminal({ orderId, onClose, onCompleted }) {
             </table>
           </div>
 
-          {!allCountsSaved && (
-            <p>
-              Approve and Reject are blocked until every component
-              has a valid saved count matching its input.
-            </p>
-          )}
-
+          <br />
           {allCountsSaved && hasShortage && (
             <p className="error">
               Shortage detected. Approval is blocked. Enter a reason
