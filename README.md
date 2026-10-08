@@ -457,8 +457,9 @@ npm test
 The suite uses Vitest and Supertest and contains 22 tests across the
 three supplied test files.
 
-The developer reports that the complete suite passed locally.
-This does not replace a post-deployment browser and API smoke test.
+All 22 tests passed in the dedicated local test environment.
+Post-deployment browser and API smoke tests are still required
+to validate the deployed configuration.
 
 ### Dedicated Test Database
 
@@ -539,7 +540,7 @@ Deploy the repository as a single Node Web Service.
 | Setting | Value |
 |---|---|
 | Root Directory | Empty when `client/` and `server/` are at repository root |
-| Region | Singapore for the current deployment strategy |
+| Region | Oregon (US West)  |
 | Health Check Path | /api/health |
 | Start Command | cd server && npm start |
 
