@@ -54,6 +54,18 @@ function getStatusColor(status) {
   }
 }
 
+function getDecisionBorderColor(decision) {
+  const normalized =
+    typeof decision === "string" ? decision.toUpperCase() : "";
+
+  const color = getStatusColor(normalized);
+
+  if (color === "green") return "#36a467";
+  if (color === "red") return "#cf4055";
+
+  return "#94a3b8";
+}
+
 export function WorkflowStatusBadge({ status }) {
   const normalized =
     typeof status === "string" ? status.toUpperCase() : "";
@@ -93,16 +105,25 @@ export function QcStatusBadge({ status }) {
   );
 }
 
-export function getDecisionBorderColor(decision) {
-  const normalized =
-    typeof decision === "string" ? decision.toUpperCase() : "";
-
-  const color = getStatusColor(normalized);
-
-  if (color === "green") return "#36a467";
-  if (color === "red") return "#cf4055";
-
-  return "#94a3b8";
+export function VerificationAuditEntry({
+  decision,
+  children,
+  className = "",
+  style,
+  ...props
+}) {
+  return (
+    <article
+      {...props}
+      className={`audit-entry ${className}`.trim()}
+      style={{
+        ...style,
+        borderLeftColor: getDecisionBorderColor(decision),
+      }}
+    >
+      {children}
+    </article>
+  );
 }
 
 export function DecisionButton({

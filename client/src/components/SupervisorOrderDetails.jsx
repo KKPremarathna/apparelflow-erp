@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import {
   WorkflowStatusBadge,
   QcStatusBadge,
-  getDecisionBorderColor,
+  VerificationAuditEntry,
 } from "./WorkflowStatus";
 
 export default function SupervisorOrderDetails({
@@ -148,7 +148,6 @@ export default function SupervisorOrderDetails({
             Recorded fabric:{" "}
             {Number(order.actualFabricYds).toFixed(2)} yards
           </p>
-
           <p>
             Status: <WorkflowStatusBadge status={order.status} />
           </p>
@@ -189,12 +188,9 @@ export default function SupervisorOrderDetails({
             <p>No verification decisions yet.</p>
           ) : (
             order.verificationLogs.map((log) => (
-              <article
-                className="audit-entry"
+              <VerificationAuditEntry
                 key={log.id}
-                style={{
-                  borderLeftColor: getDecisionBorderColor(log.decision),
-                }}
+                decision={log.decision}
               >
                 <p>
                   Decision:{" "}
@@ -216,7 +212,7 @@ export default function SupervisorOrderDetails({
                     Rejection reason: {log.rejectionNote}
                   </p>
                 )}
-              </article>
+              </VerificationAuditEntry>
             ))
           )}
 
